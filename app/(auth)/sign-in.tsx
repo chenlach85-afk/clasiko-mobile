@@ -1,7 +1,5 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import * as Linking from "expo-linking";
-import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -17,8 +15,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { supabase } from "@/lib/supabase";
-
-WebBrowser.maybeCompleteAuthSession();
+import { useSignInGoogle } from "@/lib/useSignInGoogle";
+import { useSignInApple } from "@/lib/useSignInApple";
 
 type Mode = "password" | "otp_request" | "otp_verify";
 
@@ -30,8 +28,10 @@ export default function SignInScreen() {
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState<"google" | "apple" | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  const { signInWithGoogle, loading: googleLoading } = useSignInGoogle();
+  const { signInWithApple, loading: appleLoading } = useSignInApple();
 
   const signInWithPassword = async () => {
     if (!email.trim() || !password.trim()) return;
@@ -79,34 +79,25 @@ export default function SignInScreen() {
     }
   };
 
-  const handleOAuthSignIn = async (provider: "google" | "apple") => {
-    setOauthLoading(provider);
+  const handleGoogle = async () => {
     try {
-      const redirectTo = Linking.createURL("/");
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: { redirectTo, skipBrowserRedirect: true },
-      });
-      if (error || !data.url) {
-        Alert.alert("Error", error?.message ?? "Could not start sign-in");
-        return;
-      }
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-      if (result.type === "success" && result.url) {
-        const { error: sessionError } = await supabase.auth.exchangeCodeForSession(result.url);
-        if (sessionError) {
-          Alert.alert("Sign-in failed", sessionError.message);
-        } else {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-      }
-    } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setOauthLoading(null);
+      await signInWithGoogle();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Google sign-in failed");
     }
   };
 
+  const handleApple = async () => {
+    try {
+      await signInWithApple();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Apple sign-in failed");
+    }
+  };
+
+  const oauthBusy = googleLoading || appleLoading;
   const s = styles(colors);
 
   return (
@@ -229,12 +220,12 @@ export default function SignInScreen() {
 
             {/* Google */}
             <TouchableOpacity
-              style={[s.oauthBtn, { backgroundColor: colors.muted, borderColor: colors.border }, oauthLoading === "google" && { opacity: 0.7 }]}
-              onPress={() => handleOAuthSignIn("google")}
-              disabled={oauthLoading !== null}
+              style={[s.oauthBtn, { backgroundColor: colors.muted, borderColor: colors.border }, googleLoading && { opacity: 0.7 }]}
+              onPress={handleGoogle}
+              disabled={oauthBusy}
               activeOpacity={0.85}
             >
-              {oauthLoading === "google" ? (
+              {googleLoading ? (
                 <ActivityIndicator color={colors.foreground} />
               ) : (
                 <>
@@ -247,12 +238,12 @@ export default function SignInScreen() {
             {/* Apple (iOS only) */}
             {Platform.OS === "ios" && (
               <TouchableOpacity
-                style={[s.oauthBtn, { backgroundColor: "#000", borderColor: "#000" }, oauthLoading === "apple" && { opacity: 0.7 }]}
-                onPress={() => handleOAuthSignIn("apple")}
-                disabled={oauthLoading !== null}
+                style={[s.oauthBtn, { backgroundColor: "#000", borderColor: "#000" }, appleLoading && { opacity: 0.7 }]}
+                onPress={handleApple}
+                disabled={oauthBusy}
                 activeOpacity={0.85}
               >
-                {oauthLoading === "apple" ? (
+                {appleLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <>
